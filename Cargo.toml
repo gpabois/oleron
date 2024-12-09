@@ -1,0 +1,9 @@
+[package]
+name = "oleron"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+font-kit = "0.14.2"
+pb-arena = "0.1.0"
+stylo = "0.1.0"
