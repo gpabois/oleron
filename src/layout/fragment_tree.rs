@@ -153,24 +153,6 @@ impl FragmentTree {
     }
 }
 
-impl FragmentTree {
-
-    /// Fragment any boxes which width exceeds the max width.
-    pub fn fragment_with_max_width(&mut self, max_width: i32, node: &Fragment) -> Option<Split<Fragment>> {
-        let r#box = self.borrow_box(&node).unwrap();
-        
-        if r#box.content.width <= max_width {
-            return None;
-        }
-
-        if !self.is_fragmentable(&node) {
-            return None;
-        }
-
-
-    }
-}
-
 impl<'a> BoxSystem<'a, i32> for FragmentTree {
     type EntityId = Fragment;
     type BoxRef = ComponentRef<'a, Box<i32>>;
