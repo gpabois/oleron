@@ -14,20 +14,21 @@ use super::{box_tree::{BoxNode, TextSequence}, Inline, Lay};
 
 pub type Fragment = ArenaId;
 
+
 pub struct FragmentTree {
-    root: Option<Fragment>,
+    pub root: Option<Fragment>,
     // The fragments
-    fragments: Arena<FragmentKind>,
+    pub fragments: Arena<FragmentKind>,
     // The box which fragment came from
-    sources: Components<Fragment, BoxNode>,
+    pub sources: Components<Fragment, BoxNode>,
     // The edges of the fragment
-    edges: Components<Fragment, FragmentEdges>,
+    pub edges: Components<Fragment, FragmentEdges>,
     // The boxes of the fragment
-    boxes: Components<Fragment, Box<i32>>,
+    pub boxes: Components<Fragment, Box<i32>>,
     // Text sequences
-    text_sequences: Components<Fragment, TextSequence>,
+    pub text_sequences: Components<Fragment, TextSequence>,
     // Line boxes data
-    line_boxes: Components<Fragment, LineBox>
+    pub line_boxes: Components<Fragment, LineBox>
 }
 
 impl FragmentTree {
@@ -153,38 +154,11 @@ impl FragmentTree {
 }
 
 impl FragmentTree {
-    /// Fragment a text sequence on a line break.
-    ///
-    /// # Arguments
-    /// - `text_sequence` - Must be a text sequence fragment
-    pub fn fragment_on_line_break(&mut self, text_sequence: &Fragment) {
-        if let FragmentKind::TextSequence = self.kind(text_sequence) {
-            let mut seq = self.text_sequences.borrow_mut(text_sequence).unwrap();
-            let mut frag_seq = seq.split_by_line_breaks().collect::<VecDeque<_>>();
-
-            if let Some(head) = frag_seq.pop_front() {
-                *seq = head;
-            }
-
-            drop(seq);
-    
-            let mut previous = *text_sequence;
-
-            while let Some(sub_seq) = frag_seq.pop_front() {
-                let brk = self.insert_line_break();
-                self.push_sibling(&previous, brk);
-                
-                let seq_frag = self.insert_text_sequence(sub_seq);
-                self.push_sibling(&brk, seq_frag);
-                previous = seq_frag;
-    
-            }
-        }
-    }
 
     /// Fragment any boxes which width exceeds the max width.
     pub fn fragment_with_max_width(&mut self, max_width: i32, node: &Fragment) -> Option<Split<Fragment>> {
         let r#box = self.borrow_box(&node).unwrap();
+        
         if r#box.content.width <= max_width {
             return None;
         }
@@ -193,7 +167,7 @@ impl FragmentTree {
             return None;
         }
 
-        
+
     }
 }
 
