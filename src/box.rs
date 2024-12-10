@@ -1,4 +1,4 @@
-use crate::layout::{Inline, LayIn};
+use crate::layout::{Inline, Lay};
 
 #[derive(Default, Clone)]
 pub struct BoxEdges<U> {
@@ -51,10 +51,10 @@ impl<U: std::ops::Add<U, Output = U>> std::ops::Add<BoxEdges<U>> for BoxContent<
 
 #[derive(Default, Clone)]
 pub struct Box<U> {
-    content: BoxContent<U>,
-    padding: BoxEdges<U>,
-    margin: BoxEdges<U>,
-    border: BoxEdges<U>
+    pub content: BoxContent<U>,
+    pub padding: BoxEdges<U>,
+    pub margin: BoxEdges<U>,
+    pub border: BoxEdges<U>
 }
 
 impl<U: std::ops::Add<U, Output = U>> std::ops::Add<Self> for Box<U> {
@@ -80,10 +80,11 @@ impl<U: std::ops::Add<U, Output = U> + Copy> Box<U> {
     }
 }
 
-impl<U: std::ops::Add<U, Output = U> + Copy + Ord> LayIn<Inline> for Box<U> {
-    fn lay_in(&mut self, element: Self) {
+impl<U: std::ops::Add<U, Output = U> + Copy + Ord> Lay<Inline> for Box<U> {
+    fn lay(mut self, element: Self) -> Self {
         let el_box = element.outer();
         self.content.width = self.content.width + el_box.width;
         self.content.height = std::cmp::max(self.content.height, el_box.height);
+        self
     }
 }

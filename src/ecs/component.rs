@@ -2,13 +2,16 @@ use std::collections::BTreeMap;
 
 use pb_arena::{Arena, ArenaId, ArenaRef, ArenaRefMut};
 
+pub type ComponentRef<'a, Component> = ArenaRef<'a, Component>;
+pub type ComponentMutRef<'a, Component> = ArenaRefMut<'a, Component>;
+
 // A component holder
 pub struct Components<EntityId, Component> {
     entities: BTreeMap<EntityId, ArenaId>,
     arena: Arena<Component>
 }
 
-impl<Entity: Ord, Component> Components<Entity, Component> {
+impl<Entity: Ord + Copy, Component> Components<Entity, Component> {
     pub fn new(block_size: usize) -> Self {
         Self {
             entities: Default::default(), 
@@ -19,12 +22,12 @@ impl<Entity: Ord, Component> Components<Entity, Component> {
 
     // Bind a component to an entity
     // If a component is already bound to the entity, replace its value.
-    pub fn bind(&mut self, entity: Entity, component: Component) {
+    pub fn bind(&mut self, entity: &Entity, component: Component) {
         if let Some(component_id) = self.entities.get(&entity) {
             *self.arena.borrow_mut(*component_id).unwrap() = component;
         } else {
             let component_id = self.arena.alloc(component);
-            self.entities.insert(entity, component_id);
+            self.entities.insert(*entity, component_id);
         }
     }
 
@@ -43,7 +46,7 @@ impl<Entity: Ord, Component> Components<Entity, Component> {
 
 impl<Entity: Ord + Copy, Component: Default> Components<Entity, Component> {
 
-    pub fn bind_default(&mut self, entity: Entity) {
+    pub fn bind_default(&mut self, entity: &Entity) {
         self.bind(entity, Default::default())
     }
 
