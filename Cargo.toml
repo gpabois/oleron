@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 font-kit = "0.14.2"
 pb-arena = "0.1.0"
+pb-atomic-hash-map = "0.1.0"
 stylo = "0.1.0"

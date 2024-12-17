@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 
 use pb_arena::{Arena, ArenaId, ArenaRef, ArenaRefMut};
 
@@ -6,11 +5,11 @@ use crate::{
     r#box::Box, 
     ecs::{
         component::{ComponentMutRef, ComponentRef, Components}, 
-        systems::{boxes::BoxSystem, tree::{Split, TreeEdges, TreeSystem}}
+        systems::{boxes::BoxSystem, tree::{TreeEdges, TreeSystem}}
     }
 };
 
-use super::{box_tree::{BoxNode, TextSequence}, Inline, Lay};
+use super::{box_tree::{BoxNode, TextSequence}, fragmentation::IsFragmentable, Block, Inline, Lay, Layout};
 
 pub type Fragment = ArenaId;
 
@@ -43,23 +42,35 @@ impl FragmentTree {
         .unwrap_or_default()
     }
 
-    // Checks if the fragment is fragmentable
-    pub fn is_fragmentable(&self, node: &Fragment) -> bool {
-        if self.is(node, FragmentKind::AtomicInline) {
-            return false;
-        }
-
-        if !self.has_children(node) {
-            return false;
-        }
-
-        return true;
+    /// Checks if the fragment is a break.
+    pub fn is_break(&self, fragment: &Fragment) -> bool {
+        self.is(fragment, FragmentKind::Break)
     }
 
-    pub fn insert_line_break(&mut self) -> Fragment {
-        self.fragments.alloc(FragmentKind::LineBreak)
+    /// Checks if the fragment contains a break.
+    pub fn is_breakable(&self, fragment: &Fragment) -> bool {
+        self
+            .iter_children(fragment)
+            .any(|child| self.is_break(&child))
     }
 
+    /// Checks if the fragment is an inline-level content.
+    pub fn is_inline_level_content(&self, fragment: &Fragment) -> bool {
+        self.kind(fragment).is_inline_level_content()
+    }
+
+    /// Returns true if the fragment contains only inline-level content.
+    pub fn contains_only_inline_level_content(&self, fragment: &Fragment) -> bool {
+        self.iter_children(fragment).all(|child| self.is_inline_level_content(&child))
+    }
+
+    pub fn insert_break(&mut self) -> Fragment {
+        let fragment = self.fragments.alloc(FragmentKind::Break);
+        self.bind_default_edges(&fragment);
+        fragment
+    }
+
+    /// Insert a text sequence
     pub fn insert_text_sequence(&mut self, seq: TextSequence) -> Fragment {
         let fragment = self.fragments.alloc(FragmentKind::TextSequence);
         self.text_sequences.bind(&fragment, seq);
@@ -97,6 +108,50 @@ impl FragmentTree {
         fragment
     }
 
+    // Clone a fragment but do not keep its edges.
+    pub fn clone_fragment(&mut self, src: &Fragment) -> Fragment {
+        let kind = self.kind(src);
+        let clone: ArenaId = self.fragments.alloc(kind);
+
+        self.boxes.clone_component(src, &clone);
+        self.line_boxes.clone_component(src, &clone);
+        self.sources.clone_component(src, &clone);
+        self.text_sequences.clone_component(src, &clone);
+
+        clone
+    }
+
+}
+
+impl IsFragmentable<Inline> for FragmentTree {
+    fn is_fragmentable(&self, fragment: &Fragment) -> bool {
+        if self.is(fragment, FragmentKind::AtomicInline) {
+            return false;
+        }
+
+        if !self.has_children(fragment) {
+            return false;
+        }
+
+        return true;
+    }
+}
+
+
+impl Layout<Block> for FragmentTree {
+    type Element = Fragment;
+
+    fn layout(&mut self, element: &Self::Element) {
+        
+    }
+}
+
+impl Layout<Inline> for FragmentTree {
+    type Element = Fragment;
+
+    fn layout(&mut self, element: &Self::Element) {
+        
+    }
 }
 
 impl FragmentTree {
@@ -118,7 +173,7 @@ impl FragmentTree {
                 line_box
             },
             // No dimensions for a line break
-            FragmentKind::LineBreak => {
+            FragmentKind::Break => {
                 let zero = Box::<i32>::default();
                 let mut r#box = self.borrow_mut_box(from).unwrap();
                 *r#box = zero.clone();
@@ -192,9 +247,8 @@ impl TreeSystem for FragmentTree {
         self.edges.bind(&node, edges)
     }
 
-    fn copy_node_attributes(&mut self, node: &Self::EntityId) -> Self::EntityId {
-        let kind = *self.fragments.borrow(*node).unwrap();
-        self.fragments.alloc(kind)
+    fn clone_node(&mut self, node: &Self::EntityId) -> Self::EntityId {
+        self.clone_fragment(node)
     }
 }
 
@@ -204,16 +258,27 @@ pub type FragmentEdges = TreeEdges<Fragment>;
 pub enum FragmentKind {
     // A text sequence
     TextSequence,
-    // A line break
-    LineBreak,
+    // A break in a fragmentation flow
+    Break,
     // A line box
     LineBox,
     // An inline box that cannot be fragmented
     AtomicInline,
-    // A box participating in an inline-level 
-    InlineBox
+    // A box participating in an inline-level layout
+    InlineBox,
+    // A block container
+    BlockContainer,
+    //
+    BlockBox
 }
 
+impl FragmentKind {
+    pub fn is_inline_level_content(&self) -> bool {
+        matches!(self, Self::InlineBox | Self::TextSequence)
+    }
+}
+
+#[derive(Clone)]
 pub struct LineBox {
     logical_width: i32
 }

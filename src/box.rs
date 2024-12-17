@@ -1,5 +1,3 @@
-use crate::layout::{Inline, Lay};
-
 #[derive(Default, Clone)]
 pub struct BoxEdges<U> {
     pub top: U,
@@ -77,14 +75,5 @@ impl<U: std::ops::Add<U, Output = U> + Copy> Box<U> {
         + self.padding.clone()
         + self.margin.clone()
         + self.border.clone()
-    }
-}
-
-impl<U: std::ops::Add<U, Output = U> + Copy + Ord> Lay<Inline> for Box<U> {
-    fn lay(mut self, element: Self) -> Self {
-        let el_box = element.outer();
-        self.content.width = self.content.width + el_box.width;
-        self.content.height = std::cmp::max(self.content.height, el_box.height);
-        self
     }
 }

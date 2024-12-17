@@ -1,7 +1,9 @@
 use pb_arena::{Arena, ArenaId};
-use stylo::properties_and_values::value::ComputedValue;
+use stylo::{properties::ComputedValues, properties_and_values::value::ComputedValue};
 
 use crate::{r#box::Box, ecs::{component::{ComponentMutRef, ComponentRef, Components}, systems::{boxes::BoxSystem, tree::{TreeEdges, TreeSystem}}}, font::SizedFont};
+
+use super::text_sequence::TextSequence;
 
 pub type BoxNode = ArenaId;
 
@@ -15,21 +17,6 @@ pub enum BoxNodeKind {
 
 
 pub type BoxEdges = TreeEdges<BoxNode>;
-
-pub struct TextSequence {
-    text: String,
-    font: SizedFont
-}
-
-impl TextSequence {
-    pub fn split_by_line_breaks(&self) -> impl Iterator<Item=TextSequence> + '_ {
-        self.text.split(|ch| ch == '\n').map(
-            |text| TextSequence { 
-                text: text.to_owned(), 
-                font: self.font.clone() 
-            })
-    }
-}
 
 pub struct BoxTree {
     pub root: Option<BoxNode>,
@@ -79,7 +66,7 @@ impl TreeSystem for BoxTree {
         self.root
     }
 
-    fn copy_node_attributes(&mut self, node: &Self::EntityId) -> Self::EntityId {
+    fn clone_node(&mut self, node: &Self::EntityId) -> Self::EntityId {
         let kind = *self.nodes.borrow(*node).unwrap();
         self.nodes.alloc(kind)
     }
@@ -96,8 +83,11 @@ impl BoxTree {
     }
 
     /// Insert a box in the box tree
-    pub fn insert_box(&mut self, computed_value: ComputedValue, maybe_parent: Option<BoxNode>) -> BoxNode {
+    pub fn insert_box(&mut self, computed_values: ComputedValues, maybe_parent: Option<BoxNode>) -> BoxNode {
         let node = self.nodes.alloc(BoxNodeKind::Box);
+        
+        let display = computed_values.clone_display();
+
         self.computed_values.bind(&node, computed_value);
         self.boxes.bind_default(&node);
         self.bind_default_edges(&node);

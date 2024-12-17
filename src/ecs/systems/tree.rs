@@ -95,7 +95,7 @@ pub trait TreeSystem: Sized {
     }
 
     // Copy the node attributes
-    fn copy_node_attributes(&mut self, node: &Self::EntityId) -> Self::EntityId;
+    fn clone_node(&mut self, node: &Self::EntityId) -> Self::EntityId;
 
     // Check if the node has children
     fn has_children(&self, node: &Self::EntityId) -> bool {
@@ -117,6 +117,8 @@ pub trait TreeSystem: Sized {
         if let Some(mut edges) = self.borrow_mut_edges(&node) {
             maybe_old_sibling = edges.sibling;
             edges.sibling = Some(new_sibling);
+
+            self.borrow_mut_edges(&new_sibling).unwrap().parent = edges.parent;
         }
 
         if let Some(old_sibling) = maybe_old_sibling {
@@ -130,38 +132,6 @@ pub trait TreeSystem: Sized {
             let sibling = edges.sibling;
             edges.sibling = None;
             return sibling
-        }
-
-        None
-    }
-
-    /// Recusrively fork the tree from bottom to top
-    /// up_to the top node to be forked
-    fn fork_up_to(&mut self, at: &Self::EntityId, up_to: &Self::EntityId) -> Option<Split<Self::EntityId>> {       
-
-        if let Some(split) = self.split_at(at).clone() {
-
-            // Divide the parent into two nodes
-            if let Some(parent) = self.parent(&split.left) {
-                // creates a copy of the parent
-                let right_parent = self.copy_node_attributes(&parent);
-                
-                self.bind_edges(&right_parent, TreeEdges { 
-                    parent: self.parent(&parent), 
-                    sibling: None, 
-                    child: None 
-                });
-
-                self.push_sibling(&parent, right_parent);
-                self.attach_child(&right_parent, split.right);
-                
-                // The parent is the top node
-                if *up_to == parent {
-                    return Some(Split{left: parent, right: right_parent})
-                }
-
-                return self.fork_up_to(&parent, up_to)
-            }
         }
 
         None
@@ -193,6 +163,7 @@ pub trait TreeSystem: Sized {
         })
     }
 
+    /// Get the parent of the node
     fn parent(&self, node: &Self::EntityId) -> Option<Self::EntityId> {
         let edges = self.borrow_edges(node);
         
@@ -213,6 +184,10 @@ pub trait TreeSystem: Sized {
 
 
         None
+    }
+
+    fn after(&self, node: &Self::EntityId) -> Option<Self::EntityId> {
+        self.borrow_edges(node).and_then(|edges| edges.sibling)
     }
 
     // Returns the last child in the LL
@@ -239,6 +214,11 @@ pub trait TreeSystem: Sized {
     // Iterate over siblings
     fn iter_siblings(&self, head_sibling: &Self::EntityId) -> SiblingIter<'_, Self> {
         SiblingIter::new(self, *head_sibling)
+    }
+
+    // Attach children
+    fn attach_children(&self, parent: &Self::EntityId, children: impl Iterator<Item=Self::EntityId>) {
+        children.for_each(|child| self.attach_child(parent, child));
     }
 
     // Attach a child 
