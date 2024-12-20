@@ -1,4 +1,5 @@
 
+#[derive(Clone, Copy, Default)]
 pub struct Integer(i32);
 pub struct Number(f32);
 pub struct Percentage(f32);
@@ -10,7 +11,7 @@ pub enum NumberOrPercentage {
 
 pub enum NumberOrAngle {
     Number(Number),
-    Angle(Angle)
+    Angle(Angle<f32>)
 }
 
 pub struct Dimension<Numeric, Unit> {

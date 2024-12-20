@@ -978,6 +978,7 @@ dependencies = [
  "font-kit",
  "pb-arena",
  "pb-atomic-hash-map",
+ "pb-atomic-linked-list",
  "stylo",
 ]
 
