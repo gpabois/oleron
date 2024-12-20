@@ -10,6 +10,9 @@ pub mod display;
 pub mod properties;
 pub mod order;
 pub mod visibility;
+pub mod margin;
+pub mod padding;
+pub mod border;
 
 /// Style system which holds all style applied to any document node.
 #[derive(Default, Clone)]

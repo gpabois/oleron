@@ -1,8 +1,26 @@
 
 #[derive(Clone, Copy, Default)]
 pub struct Integer(i32);
+
+#[derive(Clone, Copy)]
 pub struct Number(f32);
+
+#[derive(Clone, Copy)]
 pub struct Percentage(f32);
+
+#[derive(Clone, Copy)]
+pub enum AutoOrLengthOrPercentage {
+    Auto,
+    Length(Length),
+    Percentage(Percentage)
+}
+
+impl AutoOrLengthOrPercentage {
+    pub fn zero() -> Self {
+        AutoOrLengthOrPercentage::Length(Length::px(0))
+    }
+}
+
 
 pub enum NumberOrPercentage {
     Number(Number),
@@ -14,13 +32,24 @@ pub enum NumberOrAngle {
     Angle(Angle<f32>)
 }
 
+#[derive(Clone, Copy)]
 pub struct Dimension<Numeric, Unit> {
-    value: Numeric,
-    unit: Unit
+    pub value: Numeric,
+    pub unit: Unit
 }
 
-pub type Length<Numeric> = Dimension<Numeric, LengthUnit>;
+pub type Length = Dimension<f64, LengthUnit>;
 
+impl Length {
+    pub fn px(value: i64) -> Self {
+        Self {
+            value: value as f64,
+            unit: LengthUnit::Px
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub enum LengthUnit {
     Em,
     Ex,
