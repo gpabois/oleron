@@ -82,7 +82,7 @@ impl Display {
             Self::DISPLAY_LISTITEM => DisplayKind::Listitem,
             Self::DISPLAY_INTERNAL => DisplayKind::Internal,
             Self::DISPLAY_BOX => DisplayKind::Box,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -97,14 +97,16 @@ impl Display {
     /// Get the outer display, if any
     pub fn outer(&self) -> Option<DisplayOutside> {
         matches!(self.kind(), DisplayKind::InsideOutside)
-        .then(|| {
-            let raw = ((self.0 & Self::DISPLAY_OUTSIDE_MASK) >> Self::DISPLAY_OUTSIDE_SHIFT) as u8;
-            if raw == 0 {
-                None
-            } else {
-                DisplayOutside::try_from(raw).ok()
-            }
-        }).flatten()
+            .then(|| {
+                let raw =
+                    ((self.0 & Self::DISPLAY_OUTSIDE_MASK) >> Self::DISPLAY_OUTSIDE_SHIFT) as u8;
+                if raw == 0 {
+                    None
+                } else {
+                    DisplayOutside::try_from(raw).ok()
+                }
+            })
+            .flatten()
     }
 
     pub fn set_outer(&mut self, outer: DisplayOutside) {
@@ -112,24 +114,26 @@ impl Display {
     }
 
     /// Get the inner display
-    /// 
+    ///
     /// ```spec
-    /// If a <display-outside> value is specified but <display-inside> is omitted, 
+    /// If a <display-outside> value is specified but <display-inside> is omitted,
     /// the element’s inner display type defaults to flow.
     /// ```
     pub fn inner(&self) -> Option<DisplayInside> {
         let inner = matches!(self.kind(), DisplayKind::InsideOutside)
-        .then(|| {
-            let raw = ((self.0 & Self::DISPLAY_INSIDE_MASK) >> Self::DISPLAY_OUTSIDE_SHIFT) as u8;
-            if raw == 0 {
-                None
-            } else {
-                DisplayInside::try_from(raw).ok()
-            }
-        }).flatten();
+            .then(|| {
+                let raw =
+                    ((self.0 & Self::DISPLAY_INSIDE_MASK) >> Self::DISPLAY_OUTSIDE_SHIFT) as u8;
+                if raw == 0 {
+                    None
+                } else {
+                    DisplayInside::try_from(raw).ok()
+                }
+            })
+            .flatten();
 
         if self.outer().is_some() && inner.is_none() {
-            return Some(DisplayInside::Flow)
+            return Some(DisplayInside::Flow);
         }
 
         inner
@@ -142,47 +146,50 @@ impl Display {
     /// Get the internal display
     pub fn internal(&self) -> Option<DisplayInternal> {
         matches!(self.kind(), DisplayKind::Internal)
-        .then(|| {
-            let raw = ((self.0 & Self::DISPLAY_INTERNAL_MASK) >> Self::DISPLAY_INTERNAL_SHIFT) as u8;
-            if raw == 0 {
-                None
-            } else {
-                DisplayInternal::try_from(raw).ok()
-            }
-        }).flatten()        
+            .then(|| {
+                let raw =
+                    ((self.0 & Self::DISPLAY_INTERNAL_MASK) >> Self::DISPLAY_INTERNAL_SHIFT) as u8;
+                if raw == 0 {
+                    None
+                } else {
+                    DisplayInternal::try_from(raw).ok()
+                }
+            })
+            .flatten()
     }
 
     /// Get the box display
     pub fn r#box(&self) -> Option<DisplayBox> {
         matches!(self.kind(), DisplayKind::Box)
-        .then(|| {
-            let raw = ((self.0 & Self::DISPLAY_BOX_MASK) >> Self::DISPLAY_BOX_SHIFT) as u8;
-            if raw == 0 {
-                None
-            } else {
-                DisplayBox::try_from(raw).ok()
-            }
-        }).flatten()
+            .then(|| {
+                let raw = ((self.0 & Self::DISPLAY_BOX_MASK) >> Self::DISPLAY_BOX_SHIFT) as u8;
+                if raw == 0 {
+                    None
+                } else {
+                    DisplayBox::try_from(raw).ok()
+                }
+            })
+            .flatten()
     }
 
     pub fn listitem(&self) -> Option<DisplayListitem> {
         matches!(self.kind(), DisplayKind::Listitem)
-        .then(|| {
-            let inner = self.inner();
-            if inner == Some(DisplayInside::Flow) {
-                return Some(DisplayListitem(self.0))
-            } else if inner == Some(DisplayInside::FlowRoot) {
-                return Some(DisplayListitem(self.0))
-            } else {
-                return None
-            }
-        })
-        .flatten()
+            .then(|| {
+                let inner = self.inner();
+                if inner == Some(DisplayInside::Flow) {
+                    return Some(DisplayListitem(self.0));
+                } else if inner == Some(DisplayInside::FlowRoot) {
+                    return Some(DisplayListitem(self.0));
+                } else {
+                    return None;
+                }
+            })
+            .flatten()
     }
 
     const fn flow() -> Self {
         DisplayInside::Flow.into_display()
-    } 
+    }
     const fn flow_root() -> Self {
         DisplayInside::FlowRoot.into_display()
     }
@@ -207,14 +214,14 @@ impl Display {
     const fn run_in() -> Self {
         DisplayOutside::RunIn.into_display()
     }
-
 }
 
 pub struct DisplayListitem(u16);
 
 impl DisplayListitem {
     pub fn outer(&self) -> Option<DisplayOutside> {
-        let raw = ((self.0 & Display::DISPLAY_OUTSIDE_MASK) >> Display::DISPLAY_OUTSIDE_SHIFT) as u8;
+        let raw =
+            ((self.0 & Display::DISPLAY_OUTSIDE_MASK) >> Display::DISPLAY_OUTSIDE_SHIFT) as u8;
         if raw == 0 {
             None
         } else {
@@ -228,7 +235,7 @@ pub enum DisplayKind {
     InsideOutside = Display::DISPLAY_INSIDE_OUTSIDE,
     Listitem = Display::DISPLAY_LISTITEM,
     Internal = Display::DISPLAY_INTERNAL,
-    Box = Display::DISPLAY_BOX
+    Box = Display::DISPLAY_BOX,
 }
 
 #[repr(u8)]
@@ -239,22 +246,22 @@ pub enum DisplayInside {
     /// ```spec
     /// The element lays out its contents using flow layout (block-and-inline layout).
     ///
-    /// If its outer display type is inline or run-in, 
-    /// and it is participating in a block or inline formatting context, 
+    /// If its outer display type is inline or run-in,
+    /// and it is participating in a block or inline formatting context,
     /// then it generates an inline box.
     ///
     /// Otherwise it generates a block container box.
     ///
-    /// Depending on the value of other properties (such as position, float, or overflow) 
-    /// and whether it is itself participating in a block or inline formatting context, 
-    /// it either establishes a new block formatting context for its contents 
-    /// or integrates its contents into its parent formatting context. 
+    /// Depending on the value of other properties (such as position, float, or overflow)
+    /// and whether it is itself participating in a block or inline formatting context,
+    /// it either establishes a new block formatting context for its contents
+    /// or integrates its contents into its parent formatting context.
     /// See CSS2.1 Chapter 9. [CSS2] A block container that establishes a new block formatting context is considered to have a used inner display type of flow-root.
     /// ```
     Flow = Display::DISPLAY_INSIDE_FLOW,
     ///
     /// ```spec
-    /// The element generates a block container box, and lays out its contents using flow layout. 
+    /// The element generates a block container box, and lays out its contents using flow layout.
     /// It always establishes a new block formatting context for its contents. [CSS2]
     /// ````
     FlowRoot = Display::DISPLAY_INSIDE_FLOW_ROOT,
@@ -272,7 +279,7 @@ pub enum DisplayInside {
     /// (Grids using subgrid might not generate a new grid formatting context; see [CSS-GRID-2] for details.)
     /// ```
     Grid = Display::DISPLAY_INSIDE_GRID,
-    Ruby = Display::DISPLAY_INSIDE_RUBY
+    Ruby = Display::DISPLAY_INSIDE_RUBY,
 }
 
 impl TryFrom<u8> for DisplayInside {
@@ -286,7 +293,7 @@ impl TryFrom<u8> for DisplayInside {
             Display::DISPLAY_INSIDE_FLEX => Ok(Self::Flex),
             Display::DISPLAY_INSIDE_GRID => Ok(Self::Grid),
             Display::DISPLAY_INSIDE_RUBY => Ok(Self::Ruby),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -297,7 +304,10 @@ impl DisplayInside {
     }
 
     const fn into_display(self) -> Display {
-        Display((self.into_u16() << Display::DISPLAY_INSIDE_SHIFT as u16) | Display::DISPLAY_OUTSIDE_INLINE as u16)
+        Display(
+            (self.into_u16() << Display::DISPLAY_INSIDE_SHIFT as u16)
+                | Display::DISPLAY_OUTSIDE_INLINE as u16,
+        )
     }
 }
 
@@ -307,7 +317,7 @@ impl DisplayInside {
 pub enum DisplayOutside {
     Block = Display::DISPLAY_OUTSIDE_BLOCK,
     Inline = Display::DISPLAY_OUTSIDE_INLINE,
-    RunIn = Display::DISPLAY_OUTSIDE_RUN_IN
+    RunIn = Display::DISPLAY_OUTSIDE_RUN_IN,
 }
 
 impl TryFrom<u8> for DisplayOutside {
@@ -318,7 +328,7 @@ impl TryFrom<u8> for DisplayOutside {
             Display::DISPLAY_OUTSIDE_BLOCK => Ok(Self::Block),
             Display::DISPLAY_OUTSIDE_INLINE => Ok(Self::Inline),
             Display::DISPLAY_OUTSIDE_RUN_IN => Ok(Self::RunIn),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -329,7 +339,10 @@ impl DisplayOutside {
     }
 
     const fn into_display(self) -> Display {
-        Display((self.into_u16() << Display::DISPLAY_OUTSIDE_SHIFT as u16) | Display::DISPLAY_OUTSIDE_INLINE as u16)
+        Display(
+            (self.into_u16() << Display::DISPLAY_OUTSIDE_SHIFT as u16)
+                | Display::DISPLAY_OUTSIDE_INLINE as u16,
+        )
     }
 }
 
@@ -347,7 +360,7 @@ pub enum DisplayInternal {
     RubyBase = Display::DISPLAY_INTERNAL_RUBY_BASE,
     RubyText = Display::DISPLAY_INTERNAL_RUBY_TEXT,
     RubyBaseContainer = Display::DISPLAY_INTERNAL_RUBY_BASE_CONTAINER,
-    RubyTextContainer = Display::DISPLAY_INTERNAL_RUBY_TEXT_CONTAINER
+    RubyTextContainer = Display::DISPLAY_INTERNAL_RUBY_TEXT_CONTAINER,
 }
 
 impl DisplayInternal {
@@ -356,7 +369,10 @@ impl DisplayInternal {
     }
 
     const fn into_display(self) -> Display {
-        Display((self.into_u16() << Display::DISPLAY_INTERNAL_SHIFT as u16) | Display::DISPLAY_INTERNAL as u16)
+        Display(
+            (self.into_u16() << Display::DISPLAY_INTERNAL_SHIFT as u16)
+                | Display::DISPLAY_INTERNAL as u16,
+        )
     }
 }
 
@@ -377,7 +393,7 @@ impl TryFrom<u8> for DisplayInternal {
             Display::DISPLAY_INTERNAL_RUBY_TEXT => Ok(Self::RubyText),
             Display::DISPLAY_INTERNAL_RUBY_BASE_CONTAINER => Ok(Self::RubyBaseContainer),
             Display::DISPLAY_INTERNAL_RUBY_TEXT_CONTAINER => Ok(Self::RubyTextContainer),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -386,7 +402,7 @@ impl TryFrom<u8> for DisplayInternal {
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum DisplayBox {
     Contents = Display::DISPLAY_BOX_CONTENTS,
-    None = Display::DISPLAY_NONE_CONTENTS
+    None = Display::DISPLAY_NONE_CONTENTS,
 }
 
 impl DisplayBox {
@@ -395,10 +411,11 @@ impl DisplayBox {
     }
 
     const fn into_display(self) -> Display {
-        Display((self.into_u16() << Display::DISPLAY_BOX_SHIFT as u16) | Display::DISPLAY_BOX as u16)
+        Display(
+            (self.into_u16() << Display::DISPLAY_BOX_SHIFT as u16) | Display::DISPLAY_BOX as u16,
+        )
     }
 }
-
 
 impl TryFrom<u8> for DisplayBox {
     type Error = ();
@@ -407,7 +424,7 @@ impl TryFrom<u8> for DisplayBox {
         match value {
             Display::DISPLAY_BOX_CONTENTS => Ok(Self::Contents),
             Display::DISPLAY_NONE_CONTENTS => Ok(Self::None),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -416,17 +433,26 @@ impl TryFrom<u8> for DisplayBox {
 pub enum DisplayLegacy {
     InlineBlock, // inline flow-root
     InlineTable, // inline table
-    InlineFlex, // inline flex
-    InlineGrid // inline grid
+    InlineFlex,  // inline flex
+    InlineGrid,  // inline grid
 }
 
 impl DisplayLegacy {
     const fn into_display(self) -> Display {
         match self {
-            DisplayLegacy::InlineBlock => Display(DisplayInside::FlowRoot.into_u16() | DisplayOutside::Block.into_u16()),
-            DisplayLegacy::InlineTable => Display(DisplayInside::Table.into_u16() | DisplayOutside::Inline.into_u16()),
-            DisplayLegacy::InlineFlex => Display(DisplayInside::Flex.into_u16() | DisplayOutside::Inline.into_u16()),
-            DisplayLegacy::InlineGrid => Display(DisplayInside::Grid.into_u16() | DisplayOutside::Inline.into_u16()),
+            DisplayLegacy::InlineBlock => {
+                Display(DisplayInside::FlowRoot.into_u16() | DisplayOutside::Block.into_u16())
+            }
+            DisplayLegacy::InlineTable => {
+                Display(DisplayInside::Table.into_u16() | DisplayOutside::Inline.into_u16())
+            }
+            DisplayLegacy::InlineFlex => {
+                Display(DisplayInside::Flex.into_u16() | DisplayOutside::Inline.into_u16())
+            }
+            DisplayLegacy::InlineGrid => {
+                Display(DisplayInside::Grid.into_u16() | DisplayOutside::Inline.into_u16())
+            }
         }
     }
 }
+

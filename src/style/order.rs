@@ -1,11 +1,15 @@
+use std::ops::Deref;
+
 use super::values::numeric::Integer;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Order(Integer);
 
-impl Default for Order {
-    fn default() -> Self {
-        Self(Default::default())
+impl Deref for Order {
+    type Target = Integer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -16,3 +20,4 @@ pub mod initial {
 pub mod computed {
     pub use super::Order;
 }
+

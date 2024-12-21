@@ -1,5 +1,5 @@
 pub mod initial {
-    use crate::style::{display, order, visibility, margin, padding, border};
+    use crate::style::{border, display, margin, order, padding, visibility};
 
     #[derive(Default, Clone)]
     pub struct Properties {
@@ -10,12 +10,12 @@ pub mod initial {
         // CSS BOX 3
         pub margin: margin::initial::Margin,
         pub padding: padding::initial::Padding,
-        pub border: border::initial::Border
+        pub border: border::initial::Border,
     }
 }
 
 pub mod computed {
-    use crate::style::{display, order, visibility, margin, padding, border};
+    use crate::style::{border, display, margin, order, padding, visibility};
 
     #[derive(Default, Clone)]
     pub struct Properties {
@@ -26,12 +26,11 @@ pub mod computed {
         // CSS BOX 3
         pub margin: margin::computed::Margin,
         pub padding: padding::computed::Padding,
-        pub border: border::computed::Border
+        pub border: border::computed::Border,
     }
 }
 
 pub mod used {
-    pub struct Properties {
-        
-    }
+    pub struct Properties {}
 }
+

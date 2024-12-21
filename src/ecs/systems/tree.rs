@@ -6,12 +6,14 @@ use crate::ecs::component::Components;
 
 pub trait TreeExplorer {
     type NodeId: Copy;
-    type ChildIter<'a>: Iterator<Item=Self::NodeId> + 'a where Self: 'a;
+    type ChildIter<'a>: Iterator<Item = Self::NodeId> + 'a
+    where
+        Self: 'a;
 
     fn root(&self) -> Option<Self::NodeId>;
     fn parent(&self, node: &Self::NodeId) -> Option<Self::NodeId>;
     fn is_leaf(&self, node: &Self::NodeId) -> bool;
-    
+
     fn previous_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId>;
     fn next_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId>;
     fn last_sibling(&self, head_sibling: &Self::NodeId) -> Option<Self::NodeId>;
@@ -24,23 +26,34 @@ pub trait TreeExplorer {
 /// Breadth-first tree walking
 pub struct TreeWalker<'a, Tree: TreeExplorer> {
     queue: AtomicQueue<Tree::NodeId>,
-    tree: &'a Tree
+    tree: &'a Tree,
 }
 
 /// Breadth-first tree walking
 pub fn walk<Tree: TreeExplorer>(tree: &Tree) -> TreeWalker<'_, Tree> {
     let mut queue = AtomicQueue::new();
     tree.root().iter().for_each(|node| queue.enqueue(*node));
-    return TreeWalker {queue, tree}
+    TreeWalker { queue, tree }
 }
 
-impl<'a, Tree: TreeExplorer> Iterator for TreeWalker<'a, Tree> {
+pub fn walk_from<'a, Tree: TreeExplorer>(
+    tree: &'a Tree,
+    node: &Tree::NodeId,
+) -> TreeWalker<'a, Tree> {
+    let mut queue = AtomicQueue::new();
+    queue.enqueue(*node);
+    TreeWalker { queue, tree }
+}
+
+impl<Tree: TreeExplorer> Iterator for TreeWalker<'_, Tree> {
     type Item = Tree::NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(node) = self.queue.dequeue() {
-            self.tree.iter_children(&node).for_each(|child| self.queue.enqueue(child));
-            return Some(node)
+            self.tree
+                .iter_children(&node)
+                .for_each(|child| self.queue.enqueue(child));
+            return Some(node);
         }
 
         None
@@ -49,9 +62,18 @@ impl<'a, Tree: TreeExplorer> Iterator for TreeWalker<'a, Tree> {
 
 pub trait TreeMutator: TreeExplorer {
     /// Split the children of the node based on the predicate
-    fn split_children<F: Fn(&Self::NodeId) -> bool>(&mut self, parent: &Self::NodeId, predicate: F, mode: SplitMode) -> Option<Split<Self::NodeId>>;
+    fn split_children<F: Fn(&Self::NodeId) -> bool>(
+        &mut self,
+        parent: &Self::NodeId,
+        predicate: F,
+        mode: SplitMode,
+    ) -> Option<Split<Self::NodeId>>;
 
-    fn attach_children(&mut self, parent: &Self::NodeId, children: impl Iterator<Item=Self::NodeId>);
+    fn attach_children(
+        &mut self,
+        parent: &Self::NodeId,
+        children: impl Iterator<Item = Self::NodeId>,
+    );
     fn attach_child(&mut self, parent: &Self::NodeId, child: Self::NodeId);
 
     fn push_sibling(&mut self, node: &Self::NodeId, new_sibling: Self::NodeId);
@@ -61,31 +83,31 @@ pub trait TreeMutator: TreeExplorer {
 pub struct TreeEdges<EntityId> {
     parent: Option<EntityId>,
     sibling: Option<EntityId>,
-    child: Option<EntityId>
-} 
+    child: Option<EntityId>,
+}
 
 impl<EntityId> Default for TreeEdges<EntityId> {
     fn default() -> Self {
         Self {
             parent: None,
             sibling: None,
-            child: None
+            child: None,
         }
     }
 }
 
-pub enum ChildIter<'a, Tree: TreeExplorer>  {
+pub enum ChildIter<'a, Tree: TreeExplorer> {
     Empty,
-    SiblingIter(SiblingIter<'a, Tree>)
+    SiblingIter(SiblingIter<'a, Tree>),
 }
 
-impl<'a, Tree: TreeExplorer> Default for ChildIter<'a, Tree> {
+impl<Tree: TreeExplorer> Default for ChildIter<'_, Tree> {
     fn default() -> Self {
         Self::Empty
     }
 }
 
-impl<'a, Tree: TreeExplorer> Iterator for ChildIter<'a, Tree> {
+impl<Tree: TreeExplorer> Iterator for ChildIter<'_, Tree> {
     type Item = Tree::NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -96,53 +118,52 @@ impl<'a, Tree: TreeExplorer> Iterator for ChildIter<'a, Tree> {
     }
 }
 
-
 pub struct SiblingIter<'a, Tree: TreeExplorer> {
     tree: &'a Tree,
-    current: Tree::NodeId
+    current: Tree::NodeId,
 }
 
 impl<'a, Tree: TreeExplorer> SiblingIter<'a, Tree> {
     pub fn new(tree: &'a Tree, head_sibling: Tree::NodeId) -> Self {
         Self {
             tree,
-            current: head_sibling
+            current: head_sibling,
         }
     }
 }
 
-impl<'a, Tree: TreeExplorer> Iterator for SiblingIter<'a, Tree> {
+impl<Tree: TreeExplorer> Iterator for SiblingIter<'_, Tree> {
     type Item = Tree::NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.tree
-        .next_sibling(&self.current)
-        .inspect(|next_sibling| self.current = *next_sibling)
+            .next_sibling(&self.current)
+            .inspect(|next_sibling| self.current = *next_sibling)
     }
 }
 
 #[derive(Clone, Copy)]
 pub struct Split<EntityId: Copy> {
     pub left: EntityId,
-    pub right: EntityId
+    pub right: EntityId,
 }
 
 pub enum SplitMode {
     Before,
-    After
+    After,
 }
 
 #[derive(Clone)]
-pub struct Tree<NodeId: Hash + Copy + Eq + 'static>{
+pub struct Tree<NodeId: Hash + Copy + Eq + 'static> {
     root: Option<NodeId>,
-    edges: Components<NodeId, TreeEdges<NodeId>>
+    edges: Components<NodeId, TreeEdges<NodeId>>,
 }
 
 impl<NodeId: Hash + Copy + Eq + 'static> Tree<NodeId> {
     pub fn new() -> Self {
         Self {
             root: None,
-            edges: Components::new(100)
+            edges: Components::new(100),
         }
     }
 
@@ -151,18 +172,25 @@ impl<NodeId: Hash + Copy + Eq + 'static> Tree<NodeId> {
     }
 }
 
+impl<NodeId: Hash + Copy + Eq + 'static> Default for Tree<NodeId> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
     type NodeId = NodeId;
-    type ChildIter<'a> = ChildIter<'a, Self> where NodeId: 'a;
+    type ChildIter<'a>
+        = ChildIter<'a, Self>
+    where
+        NodeId: 'a;
 
     fn root(&self) -> Option<Self::NodeId> {
         self.root
     }
 
     fn parent(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
-        self.edges
-            .borrow(node)
-            .and_then(move |edges| edges.parent)
+        self.edges.borrow(node).and_then(move |edges| edges.parent)
     }
 
     fn is_leaf(&self, node: &Self::NodeId) -> bool {
@@ -177,7 +205,7 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
             for sibling in self.iter_children(&parent) {
                 if let Some(edges) = self.edges.borrow(&sibling) {
                     if edges.sibling == Some(*node) {
-                        return Some(sibling)
+                        return Some(sibling);
                     }
                 }
             }
@@ -186,9 +214,7 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
     }
 
     fn next_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
-        self.edges 
-            .borrow(node)
-            .and_then(|edge| edge.sibling)
+        self.edges.borrow(node).and_then(|edge| edge.sibling)
     }
 
     fn last_sibling(&self, from: &Self::NodeId) -> Option<Self::NodeId> {
@@ -196,7 +222,7 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
     }
 
     fn first_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId> {
-        self.edges.borrow(parent).map(|edge| edge.child).flatten()
+        self.edges.borrow(parent).and_then(|edge| edge.child)
     }
 
     fn last_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId> {
@@ -204,8 +230,7 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
     }
 
     fn iter_children(&self, parent: &Self::NodeId) -> Self::ChildIter<'_> {
-        self
-            .first_child(parent)
+        self.first_child(parent)
             .map(|head| self.iter_siblings(&head))
             .map(ChildIter::SiblingIter)
             .unwrap_or_default()
@@ -213,14 +238,18 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
 }
 
 impl<NodeId: Hash + Copy + Eq> TreeMutator for Tree<NodeId> {
-     fn attach_children(&mut self, parent: &Self::NodeId, children: impl Iterator<Item=Self::NodeId>) {
+    fn attach_children(
+        &mut self,
+        parent: &Self::NodeId,
+        children: impl Iterator<Item = Self::NodeId>,
+    ) {
         children.for_each(|child| self.attach_child(parent, child));
     }
 
     fn attach_child(&mut self, parent: &Self::NodeId, child: Self::NodeId) {
         if let Some(tail_sibling) = self.last_child(parent) {
             self.push_sibling(&tail_sibling, child);
-        } else if let Some(mut edges)  = self.edges.borrow_mut(&parent) {
+        } else if let Some(mut edges) = self.edges.borrow_mut(parent) {
             edges.child = Some(child)
         }
 
@@ -232,55 +261,62 @@ impl<NodeId: Hash + Copy + Eq> TreeMutator for Tree<NodeId> {
     fn push_sibling(&mut self, node: &Self::NodeId, new_sibling: Self::NodeId) {
         let mut maybe_old_sibling: Option<Self::NodeId> = None;
 
-        if let Some(mut edges) = self.edges.borrow_mut(&node) {
+        if let Some(mut edges) = self.edges.borrow_mut(node) {
             maybe_old_sibling = edges.sibling;
             edges.sibling = Some(new_sibling);
 
             self.edges.borrow_mut(&new_sibling).unwrap().parent = edges.parent;
         }
 
-
         if let Some(old_sibling) = maybe_old_sibling {
             self.push_sibling(&new_sibling, old_sibling);
-        }           
+        }
     }
 
     fn pop_sibling(&mut self, node: &Self::NodeId) -> Option<Self::NodeId> {
         if let Some(mut edges) = self.edges.borrow_mut(node) {
             let sibling = edges.sibling;
             edges.sibling = None;
-            return sibling
+            return sibling;
         }
 
         None
     }
-    
-    fn split_children<F: Fn(&Self::NodeId) -> bool>(&mut self, parent: &Self::NodeId, predicate: F, mode: SplitMode) -> Option<Split<Self::NodeId>> {
+
+    fn split_children<F: Fn(&Self::NodeId) -> bool>(
+        &mut self,
+        parent: &Self::NodeId,
+        predicate: F,
+        mode: SplitMode,
+    ) -> Option<Split<Self::NodeId>> {
         self.iter_children(parent)
-        .find(predicate)
-        .and_then(|split_at| {
-            match mode {
-                SplitMode::Before => self.previous_sibling( &split_at),
+            .find(predicate)
+            .and_then(|split_at| match mode {
+                SplitMode::Before => self.previous_sibling(&split_at),
                 SplitMode::After => Some(split_at),
-            }
-        })
-        .and_then(|left| {
-            self
-            .pop_sibling(&left)
-            .map(|right| Split {left, right})
-        })
+            })
+            .and_then(|left| self.pop_sibling(&left).map(|right| Split { left, right }))
     }
 }
 
 impl<NodeId: Hash + Copy + Eq> Tree<NodeId> {
-    fn iter_siblings(&self, from: &<Tree<NodeId> as TreeExplorer>::NodeId) -> SiblingIter<'_, Tree<NodeId>> {
+    fn iter_siblings(
+        &self,
+        from: &<Tree<NodeId> as TreeExplorer>::NodeId,
+    ) -> SiblingIter<'_, Tree<NodeId>> {
         SiblingIter::new(self, *from)
     }
 }
 
-impl<NodeId: Hash + Copy + Eq + 'static, U> TreeExplorer for U where U: Deref<Target=Tree<NodeId>> {
-    type NodeId= NodeId;
-    type ChildIter<'a> = <Tree<NodeId> as TreeExplorer>::ChildIter<'a> where Self: 'a;
+impl<NodeId: Hash + Copy + Eq + 'static, U> TreeExplorer for U
+where
+    U: Deref<Target = Tree<NodeId>>,
+{
+    type NodeId = NodeId;
+    type ChildIter<'a>
+        = <Tree<NodeId> as TreeExplorer>::ChildIter<'a>
+    where
+        Self: 'a;
 
     fn root(&self) -> Option<Self::NodeId> {
         self.deref().root()
@@ -321,3 +357,4 @@ impl<NodeId: Hash + Copy + Eq + 'static, U> TreeExplorer for U where U: Deref<Ta
 
 // A trait to represents a tree
 pub trait TreeSystem: TreeExplorer + TreeMutator {}
+

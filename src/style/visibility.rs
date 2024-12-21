@@ -2,7 +2,7 @@
 pub enum Visibility {
     Collapse,
     Hidden,
-    Visible
+    Visible,
 }
 
 impl Default for Visibility {
@@ -18,3 +18,4 @@ pub mod initial {
 pub mod computed {
     pub use super::Visibility;
 }
+
