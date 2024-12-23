@@ -1,4 +1,4 @@
-use std::{hash::Hash, ops::Deref};
+use std::{borrow::Borrow, hash::Hash, ops::Deref};
 
 use pb_atomic_linked_list::AtomicQueue;
 
@@ -11,16 +11,16 @@ pub trait TreeExplorer {
         Self: 'a;
 
     fn root(&self) -> Option<Self::NodeId>;
-    fn parent(&self, node: &Self::NodeId) -> Option<Self::NodeId>;
-    fn is_leaf(&self, node: &Self::NodeId) -> bool;
+    fn parent<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId>;
+    fn is_leaf<N: Borrow<Self::NodeId>>(&self, node: N) -> bool;
 
-    fn previous_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId>;
-    fn next_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId>;
-    fn last_sibling(&self, head_sibling: &Self::NodeId) -> Option<Self::NodeId>;
+    fn previous_sibling<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId>;
+    fn next_sibling<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId>;
+    fn last_sibling<N: Borrow<Self::NodeId>>(&self, head_sibling: N) -> Option<Self::NodeId>;
 
-    fn first_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId>;
-    fn last_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId>;
-    fn iter_children(&self, parent: &Self::NodeId) -> Self::ChildIter<'_>;
+    fn first_child<N: Borrow<Self::NodeId>>(&self, parent: N) -> Option<Self::NodeId>;
+    fn last_child<N: Borrow<Self::NodeId>>(&self, parent: N) -> Option<Self::NodeId>;
+    fn iter_children<N: Borrow<Self::NodeId>>(&self, parent: N) -> Self::ChildIter<'_>;
 }
 
 /// Breadth-first tree walking
@@ -74,10 +74,20 @@ pub trait TreeMutator: TreeExplorer {
         parent: &Self::NodeId,
         children: impl Iterator<Item = Self::NodeId>,
     );
+    /// Attach a child
     fn attach_child(&mut self, parent: &Self::NodeId, child: Self::NodeId);
 
+    /// Remove a child
+    fn remove_child(&mut self, child: Self::NodeId);
+
+    /// Push a new sibling
     fn push_sibling(&mut self, node: &Self::NodeId, new_sibling: Self::NodeId);
+
+    /// Pop the next sibling the siblings list
     fn pop_sibling(&mut self, node: &Self::NodeId) -> Option<Self::NodeId>;
+
+    /// Push a new parent 
+    fn push_parent(&mut self, node: &Self::NodeId, parent: Self::NodeId);
 }
 
 pub struct TreeEdges<EntityId> {
@@ -189,22 +199,23 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
         self.root
     }
 
-    fn parent(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
-        self.edges.borrow(node).and_then(move |edges| edges.parent)
+    fn parent<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId> {
+        self.edges.borrow(node.borrow()).and_then(move |edges| edges.parent)
     }
 
-    fn is_leaf(&self, node: &Self::NodeId) -> bool {
+    fn is_leaf<N: Borrow<Self::NodeId>>(&self, node: N) -> bool {
         self.edges
-            .borrow(node)
+            .borrow(node.borrow())
             .map(|edge| edge.child.is_none())
             .unwrap_or_else(|| true)
     }
 
-    fn previous_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
-        if let Some(parent) = self.parent(node) {
+    fn previous_sibling<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId> {
+        let node_id = *node.borrow();
+        if let Some(parent) = self.parent(&node_id) {
             for sibling in self.iter_children(&parent) {
                 if let Some(edges) = self.edges.borrow(&sibling) {
-                    if edges.sibling == Some(*node) {
+                    if edges.sibling == Some(node.borrow().clone()) {
                         return Some(sibling);
                     }
                 }
@@ -213,23 +224,23 @@ impl<NodeId: Hash + Copy + Eq + 'static> TreeExplorer for Tree<NodeId> {
         None
     }
 
-    fn next_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
-        self.edges.borrow(node).and_then(|edge| edge.sibling)
+    fn next_sibling<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId> {
+        self.edges.borrow(node.borrow()).and_then(|edge| edge.sibling)
     }
 
-    fn last_sibling(&self, from: &Self::NodeId) -> Option<Self::NodeId> {
-        self.iter_siblings(from).last()
+    fn last_sibling<N: Borrow<Self::NodeId>>(&self, from: N) -> Option<Self::NodeId> {
+        self.iter_siblings(from.borrow()).last()
     }
 
-    fn first_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId> {
-        self.edges.borrow(parent).and_then(|edge| edge.child)
+    fn first_child<N: Borrow<Self::NodeId>>(&self, parent: N) -> Option<Self::NodeId> {
+        self.edges.borrow(parent.borrow()).and_then(|edge| edge.child)
     }
 
-    fn last_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId> {
-        self.iter_children(parent).last()
+    fn last_child<N: Borrow<Self::NodeId>>(&self, parent: N) -> Option<Self::NodeId> {
+        self.iter_children(parent.borrow()).last()
     }
 
-    fn iter_children(&self, parent: &Self::NodeId) -> Self::ChildIter<'_> {
+    fn iter_children<N: Borrow<Self::NodeId>>(&self, parent: N) -> Self::ChildIter<'_> {
         self.first_child(parent)
             .map(|head| self.iter_siblings(&head))
             .map(ChildIter::SiblingIter)
@@ -297,6 +308,31 @@ impl<NodeId: Hash + Copy + Eq> TreeMutator for Tree<NodeId> {
             })
             .and_then(|left| self.pop_sibling(&left).map(|right| Split { left, right }))
     }
+    
+    fn remove_child(&mut self, child: Self::NodeId) {
+        if let Some(parent) = self.parent(child) {
+            // The child we want to remove is the head of the siblings ll
+            if let Some(head) = self.first_child(child) {
+                if head == child {
+                    self.edges.borrow_mut(&parent).unwrap().child = self.next_sibling(head)
+                }
+            }
+            // The child is in a sibling ll
+            if let Some(previous) = self.previous_sibling(child) {
+                self.pop_sibling(&previous);
+            }
+        }
+
+    }
+    
+    fn push_parent(&mut self, node: &Self::NodeId, parent: Self::NodeId) {
+        if let Some(previous) = self.previous_sibling(node) {
+            self.push_sibling(&previous, parent);
+        }
+
+        self.remove_child(*node);
+        self.attach_child(&parent, *node);
+    }
 }
 
 impl<NodeId: Hash + Copy + Eq> Tree<NodeId> {
@@ -322,39 +358,35 @@ where
         self.deref().root()
     }
 
-    fn parent(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
+    fn parent<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId> {
         self.deref().parent(node)
     }
 
-    fn is_leaf(&self, node: &Self::NodeId) -> bool {
+    fn is_leaf<N: Borrow<Self::NodeId>>(&self, node: N) -> bool {
         self.deref().is_leaf(node)
     }
 
-    fn previous_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
+    fn previous_sibling<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId> {
         self.deref().previous_sibling(node)
     }
 
-    fn next_sibling(&self, node: &Self::NodeId) -> Option<Self::NodeId> {
+    fn next_sibling<N: Borrow<Self::NodeId>>(&self, node: N) -> Option<Self::NodeId> {
         self.deref().previous_sibling(node)
     }
 
-    fn last_sibling(&self, head_sibling: &Self::NodeId) -> Option<Self::NodeId> {
+    fn last_sibling<N: Borrow<Self::NodeId>>(&self, head_sibling: N) -> Option<Self::NodeId> {
         self.deref().last_sibling(head_sibling)
     }
 
-    fn first_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId> {
+    fn first_child<N: Borrow<Self::NodeId>>(&self, parent: N) -> Option<Self::NodeId> {
         self.deref().first_child(parent)
     }
 
-    fn last_child(&self, parent: &Self::NodeId) -> Option<Self::NodeId> {
+    fn last_child<N: Borrow<Self::NodeId>>(&self, parent: N) -> Option<Self::NodeId> {
         self.deref().last_child(parent)
     }
 
-    fn iter_children(&self, parent: &Self::NodeId) -> Self::ChildIter<'_> {
+    fn iter_children<N: Borrow<Self::NodeId>>(&self, parent: N) -> Self::ChildIter<'_> {
         self.deref().iter_children(parent)
     }
 }
-
-// A trait to represents a tree
-pub trait TreeSystem: TreeExplorer + TreeMutator {}
-

@@ -37,6 +37,14 @@ where
     }
 }
 
+/// ```spec
+/// Some layout effects require blockification or inlinification of the box type, which sets the box’s computed outer display type to block or inline (respectively). (This has no effect on display types that generate no box at all, such as none or contents.)
+/// Additionally:
+/// - If a block box (block flow) is inlinified, its inner display type is set to flow-root so that it remains a block container.
+/// - If an inline box (inline flow) is inlinified, it recursively inlinifies all of its in-flow children, so that no block-level descendants break up the inline formatting context in which it participates.
+/// - For legacy reasons, if an inline block box (inline flow-root) is blockified, it becomes a block box (losing its flow-root nature). For consistency, a run-in flow-root box also blockifies to a block box.
+/// If a layout-internal box is blockified, its inner display type converts to flow so that it becomes a block container. Inlinification has no effect on layout-internal boxes. (However, placement in such an inline context will typically cause them to be wrapped in an appropriately-typed anonymous inline-level box.)
+/// ```
 pub fn inlinify<Dom>(dom: &Dom, node: &Dom::NodeId, style: &Style<Dom::NodeId>)
 where
     Dom: TDocumentObjectModelExplorer + Sync,
