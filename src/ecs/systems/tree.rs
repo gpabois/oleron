@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, hash::Hash, ops::Deref};
+use std::{borrow::{Borrow, BorrowMut}, hash::Hash, ops::Deref};
 
 use pb_atomic_linked_list::AtomicQueue;
 
@@ -23,12 +23,40 @@ pub trait TreeExplorer {
     fn iter_children<N: Borrow<Self::NodeId>>(&self, parent: N) -> Self::ChildIter<'_>;
 }
 
+pub struct AscendingTreeWalker<'a, Tree: TreeExplorer> {
+    queue: AtomicQueue<Tree::NodeId>,
+    tree: &'a Tree,
+}
+
+impl<Tree: TreeExplorer> Iterator for AscendingTreeWalker<'_, Tree> {
+    type Item = Tree::NodeId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(node) = self.queue.dequeue() {
+            self.tree
+                .parent(&node)
+                .into_iter()
+                .for_each(|child| self.queue.enqueue(child));
+            
+            return Some(node);
+        }
+
+        None
+    }
+}
+
+
 /// Breadth-first tree walking
 pub struct TreeWalker<'a, Tree: TreeExplorer> {
     queue: AtomicQueue<Tree::NodeId>,
     tree: &'a Tree,
 }
 
+pub fn walk_ascendants<'tree, Tree: TreeExplorer>(tree: &'tree Tree, from: &Tree::NodeId) -> AscendingTreeWalker<'tree, Tree> {
+    let mut queue = AtomicQueue::new();
+    queue.enqueue(*from);
+    AscendingTreeWalker { queue, tree }
+}
 /// Breadth-first tree walking
 pub fn walk<Tree: TreeExplorer>(tree: &Tree) -> TreeWalker<'_, Tree> {
     let mut queue = AtomicQueue::new();
@@ -74,11 +102,15 @@ pub trait TreeMutator: TreeExplorer {
         parent: &Self::NodeId,
         children: impl Iterator<Item = Self::NodeId>,
     );
+    
     /// Attach a child
     fn attach_child(&mut self, parent: &Self::NodeId, child: Self::NodeId);
 
     /// Remove a child
     fn remove_child(&mut self, child: Self::NodeId);
+
+    /// Interpose a child between the parent and the parent's children
+    fn interpose_child(&mut self, parent: &Self::NodeId, new_child: Self::NodeId);
 
     /// Push a new sibling
     fn push_sibling(&mut self, node: &Self::NodeId, new_sibling: Self::NodeId);
@@ -332,6 +364,18 @@ impl<NodeId: Hash + Copy + Eq> TreeMutator for Tree<NodeId> {
 
         self.remove_child(*node);
         self.attach_child(&parent, *node);
+    }
+    
+    fn interpose_child(&mut self, parent: &Self::NodeId, new_child: Self::NodeId) {
+        // reattach all the children of the parent to the new children
+        if let Some(child) = self.first_child(parent) {
+            self.iter_siblings(&child)
+            .for_each(|child| {
+                self.edges.borrow_mut(&child).unwrap().parent = Some(new_child);
+            });
+        }
+
+        self.attach_child(parent, new_child);
     }
 }
 

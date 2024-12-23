@@ -1,21 +1,37 @@
+use std::hash::Hash;
+
 use pb_arena::{sync::Arena, ArenaId};
+use pb_atomic_hash_map::AtomicHashMap;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct FormattingContextId(ArenaId);
 
 #[derive(Clone)]
-/// The formatting context tree
-pub struct FormattingContexts {
-    arena: Arena<FormattingContext>,
+pub struct FormattingContexts<NodeId>
+where NodeId: Hash + Copy + Eq
+{
+    /// A pointer to the formatting contexts
+    formatting_contexts: Arena<FormattingContext>,
+    
+    /// The FC witch the node established for its content
+    pub (crate) establishes: AtomicHashMap<NodeId, FormattingContextId>,
+
 }
 
-impl FormattingContexts {
-    pub fn new_inline_formatting_context(&mut self) -> FormattingContextId {
-        FormattingContextId(self.arena.alloc(FormattingContext::Inline(InlineFormattingContext)))
+impl<NodeId> FormattingContexts<NodeId> 
+where NodeId: Hash + Copy + Eq
+{
+    pub fn new() -> Self {
+        Self {
+            formatting_contexts: Arena::new(100, 100),
+            establishes: AtomicHashMap::new(100),
+        }
     }
 
-    pub fn new_block_formatting_context(&mut self) -> FormattingContextId {
-        FormattingContextId(self.arena.alloc(FormattingContext::Block(BlockFormattingContext)))
+    pub fn establish_new_formatting_context(&mut self, node: &NodeId, fc: FormattingContext) -> FormattingContextId {
+        let fci = FormattingContextId(self.formatting_contexts.alloc(fc));
+        self.establishes.insert(*node, fci);
+        fci
     }
 }
 
@@ -25,6 +41,10 @@ pub enum FormattingContext {
 }
 
 impl FormattingContext {
+    pub fn new_inline() -> Self {
+        Self::Inline(InlineFormattingContext)
+    }
+
     pub fn kind(&self) -> FormattingContextKind {
         match self {
             FormattingContext::Inline(_) => FormattingContextKind::InlineFormattingContext,

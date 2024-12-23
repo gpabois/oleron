@@ -49,6 +49,11 @@ impl<Entity: Hash + Copy, Component> Components<Entity, Component> {
         }
     }
 
+    pub fn share_from(&mut self, entity: &Entity, from: &Entity) {
+        let component_id = self.entities.borrow(from).unwrap();
+        self.entities.insert(*entity, *component_id);
+    }
+
     // Bind a component to an entity
     // If a component is already bound to the entity, replace its value.
     pub fn bind(&mut self, entity: &Entity, component: Component) {
