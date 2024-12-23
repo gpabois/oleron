@@ -4,7 +4,7 @@ use pb_arena::{sync::Arena, ArenaId};
 use pb_atomic_hash_map::AtomicHashMap;
 
 use crate::{
-    dom::NodeId, ecs::{
+    ecs::{
         component::Components, 
         systems::tree::{
             walk_ascendants, Tree, TreeEdges, TreeExplorer, TreeMutator

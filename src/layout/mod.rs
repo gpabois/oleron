@@ -9,7 +9,6 @@ use formatting_context::FormattingContext;
 
 use crate::{dom::TDocumentObjectModelExplorer, ecs::systems::tree::{TreeExplorer, TreeMutator}, style::display::{DisplayInside, DisplayOutside}, RenderingContext};
 
-
 /// ```spec
 /// Floats, absolutely positioned elements, block containers (such as inline-blocks, table-cells, and table-captions) that are not block boxes, and block boxes with 'overflow' other than 'visible' (except when that value has been propagated to the viewport) establish new block formatting contexts for their contents.
 /// ```
@@ -26,9 +25,10 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
             crate::style::display::DisplayBox::None => return,
         }
     } 
-
+    // Read the display value and generates the corresponding node
     let box_node = if let Some(inner) = style.display.outer() {
-        let outer = style.display.inner().unwrap_or(DisplayInside::Flex);
+        // By default if no outer display is set, then it's a flow layout.
+        let outer = style.display.inner().unwrap_or(DisplayInside::Flow);
 
         match outer {
             DisplayInside::Flow => {
@@ -75,12 +75,15 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
     }   else {
         todo!()
     };
+
+    // Bind the box node to a dom node.
+    ctx.box_tree.dom.insert(box_node, *dom_node);
     
     // Check if we have to push a new anonymous box
     check_if_anonymous_box_is_required(&mut ctx, &box_node);
 
     // Generate the rest of the box tree
-    generate_box_children(&mut ctx, dom_node, box_node);
+    generate_box_children_subtrees(&mut ctx, dom_node, box_node);
 
     // If it's a block container, and has only inline-level elements
     // Then it mush establishes an IFC.
@@ -89,7 +92,7 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 }
 
 /// Generate the box node from the DOM node's children
-fn generate_box_children<Dom>(ctx: &mut RenderingContext<'_, Dom>, dom_node: &Dom::NodeId, parent: BoxNode) 
+fn generate_box_children_subtrees<Dom>(ctx: &mut RenderingContext<'_, Dom>, dom_node: &Dom::NodeId, parent: BoxNode) 
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {   
     ctx
@@ -108,6 +111,7 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 fn establishes_new_bfc<Dom>(ctx: &mut RenderingContext<'_, Dom>, box_node: &BoxNode) -> BoxNode
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {
+    ctx.box_tree.formatting_contexts.establish_new_formatting_context(box_node, FormattingContext::new_block());
     *box_node
 }
 
@@ -125,7 +129,8 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
             FormattingContext::new_inline()
         );
 
-    // if the box is a block container, creates a root inline element.
+    // if the box is a block container
+    // creates a root inline element.
     if ctx.box_tree.kind(box_node).is_block_container() {
         let root_inline_box = ctx.box_tree.insert_box(
             BoxFlags::root_inline_box(), 
@@ -141,6 +146,10 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
     }
 }
 
+/// If the box is a block container
+/// and has only inline-level elements
+/// 
+/// Then it must establish a new inline formatting context
 pub fn check_if_a_new_inline_formatting_context_must_be_established<Dom>(ctx: &mut RenderingContext<'_, Dom>, box_node: &BoxNode) 
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {

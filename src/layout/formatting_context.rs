@@ -45,6 +45,10 @@ impl FormattingContext {
         Self::Inline(InlineFormattingContext)
     }
 
+    pub fn new_block() -> Self {
+        Self::Block(BlockFormattingContext)
+    }
+
     pub fn kind(&self) -> FormattingContextKind {
         match self {
             FormattingContext::Inline(_) => FormattingContextKind::InlineFormattingContext,
