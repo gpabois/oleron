@@ -9,7 +9,7 @@ use pb_atomic_hash_map::AtomicHashMap;
 pub type ComponentRef<'a, Component> = ArenaRef<'a, Component>;
 pub type ComponentMutRef<'a, Component> = ArenaMutRef<'a, Component>;
 
-// A component holder
+/// A component holder
 pub struct Components<EntityId: Hash, Component> {
     entities: AtomicHashMap<EntityId, ArenaId>,
     arena: Arena<Component>,
@@ -42,10 +42,19 @@ impl<Entity: Copy + Hash, Component: Clone> Components<Entity, Component> {
 }
 
 impl<Entity: Hash + Copy, Component> Components<Entity, Component> {
-    pub fn new(block_size: usize) -> Self {
+    pub fn new(bucket_size: usize, cache_size: usize) -> Self {
+        Self {
+            entities: AtomicHashMap::new(cache_size),
+            arena: Arena::new(bucket_size, cache_size),
+        }
+    }
+
+    /// Creates a new component holder which shares the same pool of components
+    /// as another holder
+    pub fn new_shared<OtherEntity: Hash + Copy>(components: &Components<OtherEntity, Component>) -> Self {
         Self {
             entities: AtomicHashMap::new(100),
-            arena: Arena::new(block_size, 100),
+            arena: components.arena.clone()
         }
     }
 

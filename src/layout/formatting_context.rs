@@ -21,10 +21,10 @@ where NodeId: Hash + Copy + Eq
 impl<NodeId> FormattingContexts<NodeId> 
 where NodeId: Hash + Copy + Eq
 {
-    pub fn new() -> Self {
+    pub fn new(bucket_size: usize, cache_size: usize) -> Self {
         Self {
-            formatting_contexts: Arena::new(100, 100),
-            establishes: AtomicHashMap::new(100),
+            formatting_contexts: Arena::new(bucket_size, cache_size),
+            establishes: AtomicHashMap::new(cache_size),
         }
     }
 

@@ -1,0 +1,7 @@
+use super::Token;
+
+grammar;
+
+Newline: Token = r"\n|\r\n|\r|\f" => Token::Newline;
+Whitespace: Token = r" |\t" => Token::Whitespace;
+HexDigit: Token =  r"[0-9a-fA-F]" => Token::HexDigit(<>);

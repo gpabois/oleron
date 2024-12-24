@@ -15,79 +15,7 @@ use crate::{dom::TDocumentObjectModelExplorer, ecs::systems::tree::{TreeExplorer
 pub fn generate_box_subtree_with_parent<'dom, Dom>(mut ctx: RenderingContext<'dom, Dom>, dom_node: &Dom::NodeId, maybe_parent: Option<BoxNode>) 
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {
-    let style = ctx.style.computed.borrow(&dom_node).unwrap().clone();
-        
-    if let Some(bx_dsp) = style.display.r#box() {
-        match bx_dsp {
-            crate::style::display::DisplayBox::Contents => {
-                todo!("implements contents")
-            },
-            crate::style::display::DisplayBox::None => return,
-        }
-    } 
-    // Read the display value and generates the corresponding node
-    let box_node = if let Some(inner) = style.display.outer() {
-        // By default if no outer display is set, then it's a flow layout.
-        let outer = style.display.inner().unwrap_or(DisplayInside::Flow);
 
-        match outer {
-            DisplayInside::Flow => {
-                match inner {
-                    DisplayOutside::Block => {
-                        ctx.box_tree.insert_box(
-                            BoxFlags::block_level(),
-                            style.clone(),
-                            maybe_parent
-                        )
-                    },
-                    DisplayOutside::Inline => {
-                        ctx.box_tree.insert_box(
-                            BoxFlags::inline_level(), 
-                            style.clone(), 
-                            maybe_parent
-                        )
-                    },
-                    DisplayOutside::RunIn => {
-                        ctx.box_tree.insert_box(
-                            BoxFlags::run_in_level(), 
-                            style.clone(), 
-                            maybe_parent
-                        )
-                    },
-                }
-            },
-
-            DisplayInside::FlowRoot => {
-                let box_node = ctx.box_tree.insert_box(
-                    BoxFlags::block_container(), 
-                    style.clone(), 
-                    maybe_parent
-                );
-
-                establishes_new_bfc(&mut ctx, &box_node)
-            },
-            
-            DisplayInside::Table => todo!(),
-            DisplayInside::Flex => todo!(),
-            DisplayInside::Grid => todo!(),
-            DisplayInside::Ruby => todo!(),
-        } 
-    }   else {
-        todo!()
-    };
-
-    // Bind the box node to a dom node.
-    ctx.box_tree.dom.insert(box_node, *dom_node);
-    
-    // Check if we have to push a new anonymous box
-    check_if_anonymous_box_is_required(&mut ctx, &box_node);
-
-    // Generate the rest of the box tree
-    generate_box_children_subtrees(&mut ctx, dom_node, box_node);
-
-    // If it's a block container, and has only inline-level elements
-    // Then it mush establishes an IFC.
-    check_if_a_new_inline_formatting_context_must_be_established(&mut ctx, &box_node);
     
 }
 
@@ -95,23 +23,14 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 fn generate_box_children_subtrees<Dom>(ctx: &mut RenderingContext<'_, Dom>, dom_node: &Dom::NodeId, parent: BoxNode) 
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {   
-    ctx
-    .dom
-    .iter_children(dom_node)
-    .for_each(|child_dom_node| {
-        generate_box_subtree_with_parent(
-            ctx.clone(), 
-            &child_dom_node, 
-            Some(parent)
-        );
-    });
+
 }
 
 /// Establishes a new block formatting context
 fn establishes_new_bfc<Dom>(ctx: &mut RenderingContext<'_, Dom>, box_node: &BoxNode) -> BoxNode
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {
-    ctx.box_tree.formatting_contexts.establish_new_formatting_context(box_node, FormattingContext::new_block());
+    ctx.boxes.formatting_contexts.establish_new_formatting_context(box_node, FormattingContext::new_block());
     *box_node
 }
 
@@ -122,7 +41,7 @@ fn establish_new_inline_formatting_context<Dom>(ctx: &mut RenderingContext<'_, D
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {
     ctx
-        .box_tree
+        .boxes
         .formatting_contexts
         .establish_new_formatting_context(
             box_node, 
@@ -131,14 +50,14 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 
     // if the box is a block container
     // creates a root inline element.
-    if ctx.box_tree.kind(box_node).is_block_container() {
-        let root_inline_box = ctx.box_tree.insert_box(
+    if ctx.boxes.kind(box_node).is_block_container() {
+        let root_inline_box = ctx.boxes.insert_box(
             BoxFlags::root_inline_box(), 
             box_node, 
             None
         );
 
-        ctx.box_tree.interpose_child(box_node, root_inline_box);
+        ctx.boxes.interpose_child(box_node, root_inline_box);
 
         root_inline_box
     } else {
@@ -153,7 +72,7 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 pub fn check_if_a_new_inline_formatting_context_must_be_established<Dom>(ctx: &mut RenderingContext<'_, Dom>, box_node: &BoxNode) 
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {
-    if ctx.box_tree.kind(box_node).is_block_container() && ctx.box_tree.has_only_inline_level_boxes(box_node) {
+    if ctx.boxes.kind(box_node).is_block_container() && ctx.boxes.has_only_inline_level_boxes(box_node) {
         establish_new_inline_formatting_context(ctx, box_node);
     }
 }
@@ -161,25 +80,25 @@ where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 pub fn check_if_anonymous_box_is_required<Dom>(ctx: &mut RenderingContext<'_, Dom>, box_node: &BoxNode) 
 where Dom: TDocumentObjectModelExplorer + Sync, Dom::NodeId: Hash + Copy + Eq
 {
-    let maybe_parent = ctx.box_tree.parent(box_node);
+    let maybe_parent = ctx.boxes.parent(box_node);
 
     let requires_anonymous_block_box = maybe_parent
         .map(|parent| 
-            ctx.box_tree.kind(parent).is_block_container() 
-            && ctx.box_tree.has_inline_level_boxes(parent)
+            ctx.boxes.kind(parent).is_block_container() 
+            && ctx.boxes.has_inline_level_boxes(parent)
         )
         .unwrap_or_default();
 
 
     if requires_anonymous_block_box {
         let anonymous = ctx
-            .box_tree
+            .boxes
             .insert_box(
                 BoxFlags::block_level(), 
                 box_node, 
                 None
             );
             
-        ctx.box_tree.push_parent(box_node, anonymous);
+        ctx.boxes.push_parent(box_node, anonymous);
     }
 }

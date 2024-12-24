@@ -5,7 +5,7 @@ use pb_atomic_linked_list::AtomicQueue;
 use crate::ecs::component::Components;
 
 pub trait TreeExplorer {
-    type NodeId: Copy;
+    type NodeId: Copy + Hash + Eq;
     type ChildIter<'a>: Iterator<Item = Self::NodeId> + 'a
     where
         Self: 'a;
@@ -205,7 +205,7 @@ impl<NodeId: Hash + Copy + Eq + 'static> Tree<NodeId> {
     pub fn new() -> Self {
         Self {
             root: None,
-            edges: Components::new(100),
+            edges: Components::new(100, 100),
         }
     }
 

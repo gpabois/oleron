@@ -3,9 +3,13 @@ name = "oleron"
 version = "0.1.0"
 edition = "2021"
 
+[build-dependencies]
+lalrpop = "0.22.0"
+
 [dependencies]
 font-kit = "0.14.2"
 pb-arena = "0.1.0"
 pb-atomic-hash-map = "0.1.0"
 pb-atomic-linked-list = "0.1.6"
 stylo = "0.1.0"
+lalrpop-util = { version = "0.21.0", features = ["lexer", "unicode"] }

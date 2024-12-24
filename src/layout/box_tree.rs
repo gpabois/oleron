@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::{borrow::Borrow, hash::Hash};
 
 use pb_arena::{sync::Arena, ArenaId};
 use pb_atomic_hash_map::AtomicHashMap;
@@ -9,7 +9,7 @@ use crate::{
         systems::tree::{
             walk_ascendants, Tree, TreeEdges, TreeExplorer, TreeMutator
         }
-    }, style::properties::computed
+    }, style::{properties::computed, ComputedStyleId, Styles}
 };
 
 use super::{formatting_context::{FormattingContextId, FormattingContexts}, text_sequence::TextSequence};
@@ -142,19 +142,33 @@ pub struct BoxTree<DomNodeId>
     nodes: Arena<BoxNodeKind>,
     pub dom: AtomicHashMap<BoxNode, DomNodeId>,
     pub boxes: Components<BoxNode, Box<i32>>,
-    pub computed_values: Components<BoxNode, computed::Properties>,
+    pub style: Styles<BoxNode>,
     pub text_sequences: Components<BoxNode, TextSequence>,
     pub formatting_contexts: FormattingContexts<BoxNode>
 }
 
+impl<DomNodeId> BoxTree<DomNodeId> {
+    pub fn new<OtherStyleId: Hash + Copy>(style: &Styles<OtherStyleId>, bucket_size: usize, cache_size: usize) -> Self {
+        Self {
+            tree: Tree::new(),
+            dom: AtomicHashMap::new(bucket_size),
+            nodes: Arena::new(bucket_size, cache_size),
+            boxes: Components::new(bucket_size, cache_size),
+            style: Styles::new_shared(style),
+            text_sequences: Components::new(bucket_size, cache_size),
+            formatting_contexts: FormattingContexts::new(bucket_size, cache_size)
+        }
+    }
+}
+
 pub enum ComputedProperties {
-    Properties(computed::Properties),
+    StyleId(ComputedStyleId),
     SameAs(BoxNode)
 }
 
-impl From<computed::Properties> for ComputedProperties {
-    fn from(value: computed::Properties) -> Self {
-        Self::Properties(value)
+impl From<ComputedStyleId> for ComputedProperties {
+    fn from(value: ComputedStyleId) -> Self {
+        Self::StyleId(value)
     }
 }
 
@@ -276,7 +290,7 @@ impl<DomNodeId> BoxTree<DomNodeId>
     pub fn insert_text_sequence(&mut self, text: &str, props: computed::Properties, maybe_parent: Option<BoxNode>) -> BoxNode {
         let node = BoxNode(self.nodes.alloc(BoxNodeKind::TextSequence));
         self.text_sequences.bind(&node, TextSequence::from(text));
-        self.computed_values.bind(&node, props);
+        //self.computed_values.bind(&node, props);
         self.tree.bind_edges(&node);
         maybe_parent.inspect(|parent| self.tree.attach_child(parent, node));
         node
@@ -288,15 +302,6 @@ impl<DomNodeId> BoxTree<DomNodeId>
     {
         let node = BoxNode(self.nodes.alloc(BoxNodeKind::Box(flags))); 
         
-        match ComputedProperties::from(props) {
-            ComputedProperties::Properties(props) => {
-                self.computed_values.bind(&node, props); 
-            },
-            ComputedProperties::SameAs(from) => {
-                self.computed_values.share_from(&node, &from);
-            },
-        }
-
         self.boxes.bind_default(&node);
         self.tree.bind_edges(&node);
         maybe_parent.inspect(|parent| self.tree.attach_child(parent, node));

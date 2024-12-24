@@ -1,11 +1,11 @@
-use std::ops::Deref;
+use std::{hash::Hash, ops::Deref};
 
 use pb_arena::{sync::Arena, ArenaId};
 
-use crate::ecs::{
+use crate::{ecs::{
     component::{ComponentRef, Components}, 
     systems::tree::{Tree, TreeExplorer}
-};
+}, style::Styles};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NodeKind {
@@ -66,4 +66,27 @@ impl TDocumentObjectModelExplorer for DocumentObjectModel {
         self.texts.borrow(node)
     }
 
+}
+
+
+/// DOM Handler
+pub struct DomHandler<'a, Dom>
+where Dom: TDocumentObjectModelExplorer
+{
+    pub dom: &'a Dom,
+    pub(crate) styles:  Styles<Dom::NodeId>,
+}
+
+impl<'a, Dom> DomHandler<'a, Dom> 
+where Dom: TDocumentObjectModelExplorer
+{
+    
+}
+
+impl<'a, Dom> Clone for DomHandler<'a, Dom> 
+where Dom: TDocumentObjectModelExplorer
+{
+    fn clone(&self) -> Self {
+        Self { dom: self.dom.clone(), styles: self.styles.clone() }
+    }
 }
