@@ -1,4 +1,4 @@
-use std::{ops::{Range, RangeInclusive}, str::CharIndices};
+use std::{cmp::min, ops::{Deref, Range, RangeInclusive}, str::CharIndices};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind<'input> {
@@ -29,6 +29,8 @@ pub enum TokenKind<'input> {
     At,
     EOF
 }
+
+pub type SpannedToken<'src> = Span<Token<'src>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Token<'src> {
@@ -76,6 +78,14 @@ pub struct Span<T> {
     pub value: T
 }
 
+impl<T> Deref for Span<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
 impl<T> Span<T> {
     pub fn new(value: T, loc: RangeInclusive<usize>) -> Self {
         Self {value, loc }
@@ -98,11 +108,7 @@ impl<'input> Lexer<'input> {
 }
 
 impl<'input> Lexer<'input> {
-    fn next_char(&mut self) -> Option<char> {
-        self.chars.next().map(|(_, ch)| ch)
-    }
-
-    fn peek(&self, nth: usize) -> Option<(usize, char)> {
+    fn peek_indice(&self, nth: usize) -> Option<(usize, char)> {
         self.chars.clone().nth(nth)
     }
 
@@ -112,23 +118,24 @@ impl<'input> Lexer<'input> {
             .map(|(_, ch)| ch)
     }
 
-    fn consume(&mut self, n: usize) {
+    fn consume_char(&mut self, n: usize) {
         for _ in 0..n {
             self.chars.next();
         }
     }
 
     fn peek_str(&self, size: usize) -> &'input str {
-        let start = self.current_char().unwrap().0;
-        &self.input[start..start+size]
-    }
+        if self.current_pos().is_none() {
+            return ""
+        }
 
-    fn current_char(&self) -> Option<(usize, char)> {
-        self.peek(0)
+        let start = self.current_pos().unwrap();
+        let end = min(start+size-1, self.input.len() - 1);
+        &self.input.get(start..=end).unwrap_or_default()
     }
     
     fn current_pos(&self) -> Option<usize> {
-        self.peek(0).map(|(pos, _)| pos)
+        self.peek_indice(0).map(|(pos, _)| pos)
     }
 
     fn consume_comment(&mut self) -> LexerResult<Span<Token<'input>>>  {
@@ -137,10 +144,10 @@ impl<'input> Lexer<'input> {
         let start = self.current_pos().unwrap();
 
         while self.peek_str(2) != "*/" {
-            self.consume(1);
+            self.consume_char(1);
         }
 
-        self.consume(2);
+        self.consume_char(2);
         let end = self.current_pos().unwrap();
 
         Ok(Span {
@@ -175,23 +182,28 @@ impl<'input> Lexer<'input> {
         let start = self.current_pos()
             .ok_or_else(|| LexicalError::UnexpectedEof)?;
         
-        self.consume(1); // consume delimiter
+        self.consume_char(1); // consume delimiter
 
         let str_start = self.current_pos()
             .ok_or_else(|| LexicalError::UnexpectedEof)?;
+        let mut str_end = str_start - 1;
 
         while self.peek_char(0) != Some(expected_delimiter) {
-            if self.peek_char(0) == Some('\\') {
-                self.consume(2);
+            // an escape
+            if self.current_is_valid_escape() {
+                self.consume_char(2);
+                str_end += 2;
             } else {
-                self.consume(1);
+                self.consume_char(1);
+                str_end += 1;
             }
+        }   
+
+        // consume the other 
+        if self.peek_char(0) == Some(expected_delimiter) {
+            self.consume_char(1);
         }
-        let str_end = self.current_pos()
-            .ok_or_else(|| LexicalError::UnexpectedEof)?;
-        
-        self.consume(1);
-        
+
         let end = self.current_pos()
             .ok_or_else(|| LexicalError::UnexpectedEof)?;
 
@@ -208,16 +220,17 @@ impl<'input> Lexer<'input> {
     }
 
     fn consume_url_token(&mut self) -> LexerResult<Span<Token<'input>>> {
-        assert!(self.peek_str(3) == "url(");
+        assert!(self.peek_str(4) == "url(");
         let start = self.current_pos().unwrap();
         let mut end = start;
         
-        self.consume(4);
+        self.consume_char(4);
         self.consume_whitespaces();
 
         if self.peek_char(0) == Some('"') || self.peek_char(0) == Some('\'') {
+            end += 3;
             return Ok(Span {
-                loc: start..=start+3,
+                loc: start..=end,
                 value: Token {
                     kind: TokenKind::Function,
                     value: &"url("
@@ -228,24 +241,27 @@ impl<'input> Lexer<'input> {
         let mut url_value_start = self.current_pos().unwrap();
         let mut url_value_end = url_value_start;
 
-        while let Some(ch) = self.peek_char(1) {
+        while let Some(ch) = self.peek_char(0) {
             match ch {
                 // consume whitespaces
-                ch if Self::is_whitespace(ch) => continue,
+                ch if Self::is_whitespace(ch) => {
+                    self.consume_whitespaces();
+                },
                 // bad-url
                 '"' | '\'' | '(' => {
-                    self.consume(1);
+                    end = self.current_pos().unwrap();
+                    self.consume_char(1);
                     
-                    while let Some(ch) = self.next_char()  {
-                        self.consume(1);
+                    while let Some((pos, ch)) = self.peek_indice(0)  {
+                        end = pos;
+                        self.consume_char(1);
+                             
                         if ch == ')' {
                             break;
                         } else {
                             url_value_end = self.current_pos().unwrap()
                         }
-                    }
-
-                    end = self.current_pos().unwrap();
+                    }                   
                     let value = &self.input[url_value_start..url_value_end];
                     return Ok(Span {
                         loc: start..=end,
@@ -258,15 +274,15 @@ impl<'input> Lexer<'input> {
                 },
                 // escape
                 '\\' => {
-                    self.consume(2);
-                    url_value_start = self.current_pos().unwrap();
+                    self.consume_char(2);
+                    url_value_start += 2;
                 },
                 ')' => {
                     let value = &self.input[url_value_start..=url_value_end];
 
-                    self.consume(1);
                     end = self.current_pos().unwrap();
-
+                    self.consume_char(1);
+                    
                     return Ok(Span {
                         loc: start..=end,
                         value: Token {
@@ -277,7 +293,7 @@ impl<'input> Lexer<'input> {
                 },
                 _ => {
                     url_value_end = self.current_pos().unwrap();
-                    self.consume(1);
+                    self.consume_char(1);
                 }
             }
         }
@@ -289,26 +305,26 @@ impl<'input> Lexer<'input> {
         let start = self.current_pos().unwrap();
         let mut end = start;
 
-        while let Some(ch) = self.peek_char(1) {
+        while let Some(ch) = self.peek_char(0) {
             if Self::is_valid_escape(self.peek_str(2)) {
-                self.consume(2);
-                end = self.current_pos().unwrap();
+                self.consume_char(2);
+                end += 2;
             } else if Self::is_ident_code_point(ch) {
-                self.consume(1);
-                end = self.current_pos().unwrap();
+                self.consume_char(1);
+                end += 1;
             } else {
                 break;
             }
         }
 
-        (start..=end, &self.input[start..=end])
+        (start..=end-1, &self.input[start..=end-1])
     }
 
     fn consume_hash(&mut self) -> LexerResult<Span<Token<'input>>> {
         assert!(self.peek_char(0) == Some('#'));
         let start = self.current_pos().unwrap();
         
-        self.consume(1);
+        self.consume_char(1);
 
         if self.current_would_start_ident_sequence() {
             let (id_loc, value) = self.consume_ident_sequence();
@@ -342,7 +358,7 @@ impl<'input> Lexer<'input> {
             }
 
             end = self.current_pos();
-            self.consume(1);
+            self.consume_char(1);
         }
         
         start.map(|start| {
@@ -358,13 +374,7 @@ impl<'input> Lexer<'input> {
     fn consume_signed_digit_sequence(&mut self) -> Option<(RangeInclusive<usize>, &'input str, bool, &'input str)> {
         let start = self.current_pos()?;
 
-        let neg_sign = if self.peek_char(0) == Some('+') {
-            true
-        } else if self.peek_char(0) == Some('-') {
-            true
-        } else {
-            false
-        };
+        let neg_sign = self.peek_char(0).map(|ch| ch == '-').inspect(|_| self.consume_char(1)).unwrap_or_default();
         
         let (loc, digits) = self.consume_digit_sequence()?;
         let end = *loc.end();
@@ -373,36 +383,30 @@ impl<'input> Lexer<'input> {
 
     }
 
-    fn consume_number(&mut self) -> LexerResult<(Range<usize>, Number<'input>)> {
+    fn consume_number(&mut self) -> LexerResult<(RangeInclusive<usize>, Number<'input>)> {
         let mut nb = Number::default();
 
         let start = self.current_pos().unwrap();
-        let mut end = 0usize;
+        let mut end = start;
 
-        nb.neg = if self.peek_char(0) == Some('+') {
-            true
-        } else if self.peek_char(0) == Some('-') {
-            true
-        } else {
-            false
-        };
+        nb.neg = self.peek_char(0).map(|ch| ch == '-').inspect(|_| self.consume_char(1)).unwrap_or_default();
 
         self.consume_digit_sequence()
         .into_iter()
-        .for_each(|(l, whole)| {
-            nb.integer = Some(whole);
+        .for_each(|(l, integer)| {
+            nb.integer = Some(integer);
             end = *l.end();
         });
 
-        if self.peek_char(1) == Some('.') {
-            self.consume(1);
+        if self.peek_char(0) == Some('.') {
+            self.consume_char(1);
             let (l, decimal) = self.consume_digit_sequence().unwrap();
             end = *l.end();
             nb.decimal = Some(decimal);
         }
 
-        if self.peek_char(1) == Some('e') || self.peek_char(1) == Some('E') {
-            self.consume(1);
+        if self.peek_char(0) == Some('e') || self.peek_char(0) == Some('E') {
+            self.consume_char(1);
             let (l, _, neg, value) = self.consume_signed_digit_sequence().unwrap();
             end = *l.end();
             nb.exponent = Some(Exponent {
@@ -411,14 +415,14 @@ impl<'input> Lexer<'input> {
             });
         }
 
-        Ok((start..end, nb))
+        Ok((start..=end, nb))
     }
 
     fn consume_numeric_token(&mut self) -> LexerResult<Span<Token<'input>>> {
         let (num_loc, number) = self.consume_number()?;
 
-        let start = num_loc.start;
-        let mut end = num_loc.end;
+        let start = *num_loc.start();
+        let mut end = *num_loc.end();
         
         if self.current_would_start_ident_sequence() {
             let (dim_loc, unit) = self.consume_ident_sequence();
@@ -435,7 +439,7 @@ impl<'input> Lexer<'input> {
 
         if self.current_is_percentage_sign() {
             end = self.current_pos().unwrap();
-            self.consume(1);
+            self.consume_char(1);
             
             return Ok(Span {
                 loc: start..=end,
@@ -465,7 +469,7 @@ impl<'input> Lexer<'input> {
         let (mut loc, value) = self.consume_ident_sequence();
         // function-token 
         if self.peek_char(0) == Some('(') {
-            self.consume(1);
+            self.consume_char(1);
             loc = *loc.start()..=*loc.end()+1;
             
             return Ok(Span {
@@ -489,7 +493,7 @@ impl<'input> Lexer<'input> {
 
     fn consume_at_token(&mut self) -> LexerResult<Span<Token<'input>>> {
         let start = self.current_pos().unwrap();
-        self.consume(1);
+        self.consume_char(1);
 
         if self.current_would_start_ident_sequence() {
             let (loc, value) = self.consume_ident_sequence();
@@ -577,8 +581,7 @@ impl Lexer<'_> {
     }
 
     fn would_start_and_ident_sequence(txt: &str) -> bool {
-        let maybe_first = txt.chars().nth(0);
-        if let Some(first) = maybe_first {
+        if let Some(first) = txt.chars().nth(0) {
             if Self::is_ident_start_code_point(first) {
                 return true;
             }
@@ -600,6 +603,18 @@ impl Lexer<'_> {
     }
 }
 
+impl<'input> Lexer<'input> {
+    pub fn peek(&self, n: usize) -> Option<LexerResult<SpannedToken<'input>>> {
+        self.clone().nth(n)
+    }
+
+    pub fn consume(&mut self, size: usize) {
+        for _ in 0..size {
+            self.next();
+        }
+    }
+}
+
 impl<'input> Iterator for Lexer<'input> {
     type Item = LexerResult<Span<Token<'input>>>;
 
@@ -611,7 +626,7 @@ impl<'input> Iterator for Lexer<'input> {
             '#' => self.consume_hash(),
             '('  => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -622,7 +637,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             ')' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -633,7 +648,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             ',' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -645,7 +660,7 @@ impl<'input> Iterator for Lexer<'input> {
             '+' if self.current_would_start_number() => self.consume_numeric_token(),
             '+' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -658,7 +673,7 @@ impl<'input> Iterator for Lexer<'input> {
             '-' if self.current_would_start_ident_sequence() => self.consume_ident_token(),
             '-' if self.peek_str(3) == "-->" => {
                 let start = self.current_pos().unwrap();
-                self.consume(3);
+                self.consume_char(3);
                 Ok(Span {
                     loc: start..=start+2,
                     value: Token {
@@ -669,7 +684,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             '-' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -681,7 +696,7 @@ impl<'input> Iterator for Lexer<'input> {
             '.' if self.current_would_start_number() => self.consume_numeric_token(),
             '.' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -692,7 +707,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             ':' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -703,7 +718,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             ';' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -714,7 +729,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             '<' if self.peek_str(4) == "<!--" => {
                 let start = self.current_pos().unwrap();
-                self.consume(4);
+                self.consume_char(4);
                 Ok(Span {
                     loc: start..=start+3,
                     value: Token {
@@ -725,7 +740,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             '<' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -737,7 +752,7 @@ impl<'input> Iterator for Lexer<'input> {
             '@' => self.consume_at_token(),
             '[' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -749,7 +764,7 @@ impl<'input> Iterator for Lexer<'input> {
             '\\' if self.current_is_valid_escape() => self.consume_ident_token(),
             '\\' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -760,7 +775,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             ']' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -771,7 +786,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             '{' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -782,7 +797,7 @@ impl<'input> Iterator for Lexer<'input> {
             },
             '}' => {
                 let start = self.current_pos().unwrap();
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -796,7 +811,7 @@ impl<'input> Iterator for Lexer<'input> {
             _ => {
                 let start = self.current_pos().unwrap();
                 let value = self.peek_str(1);
-                self.consume(1);
+                self.consume_char(1);
                 Ok(Span {
                     loc: start..=start,
                     value: Token {
@@ -811,11 +826,13 @@ impl<'input> Iterator for Lexer<'input> {
 
 #[cfg(test)]
 mod test {
-    use super::{Lexer, LexerResult, Token, Span, TokenKind};
+    use crate::style::parser::lexer::Exponent;
+
+    use super::{Lexer, LexerResult, Token, Span, TokenKind, Number, Dimension};
 
     #[test]
     fn test_whitespace_token() {
-        let lexer = Lexer::new("  ");
+        let lexer = Lexer::new("   ");
         let tokens = lexer.collect::<LexerResult<Vec<_>>>().ok().unwrap();
 
         assert_eq!(
@@ -823,10 +840,223 @@ mod test {
             vec![
                 Span::new(
                     Token::new(
-                        "  ",
+                        "   ",
                         TokenKind::Whitespace
                     ),
-                    0..=1
+                    0..=2
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_ident_token() {
+        let lexer = Lexer::new("--0123id_token");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "--0123id_token",
+                        TokenKind::Ident
+                    ),
+                    0..=13
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_url_token() {
+        let lexer = Lexer::new("url(  http://www.test.lan  )");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "http://www.test.lan",
+                        TokenKind::Url
+                    ),
+                    0..=27
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_bad_url_token() {
+        let lexer = Lexer::new("url(  (badurl  )");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "(badurl  ",
+                        TokenKind::BadUrl
+                    ),
+                    0..=15
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_function_token() {
+        let lexer = Lexer::new("func(");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();   
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "func(",
+                        TokenKind::Function
+                    ),
+                    0..=4
+                )
+            ]
+        ) 
+    }
+
+    #[test]
+    fn test_function_token_with_url() {
+        let lexer = Lexer::new("url('arg')");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();   
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new("url(", TokenKind::Function),
+                    0..=3
+                ),
+                Span::new(
+                    Token::new("arg",  TokenKind::String),
+                    4..=9                  
+                ),
+                Span::new(
+                    Token::new(")", TokenKind::RightPar),
+                    9..=9
+                )
+            ]
+        ) 
+    }
+
+    #[test]
+    fn test_numeric_token() {
+        let lexer = Lexer::new("-12.345e-678");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+        
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "-12.345e-678",
+                        TokenKind::Number(Number {
+                            neg: true,
+                            integer: Some("12"),
+                            decimal: Some("345"),
+                            exponent: Some(Exponent { neg: true, value: "678" })
+                        })
+                    ),
+                    0..=11
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_percentage_token() {
+        let lexer = Lexer::new("-12.345e-678%");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+        
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "-12.345e-678%",
+                        TokenKind::Percentage(Number {
+                            neg: true,
+                            integer: Some("12"),
+                            decimal: Some("345"),
+                            exponent: Some(Exponent { neg: true, value: "678" })
+                        })
+                    ),
+                    0..=12
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_dimension_token() {
+        let lexer = Lexer::new("-12.345e-678px");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+        
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "-12.345e-678px",
+                        TokenKind::Dimension(Dimension {
+                            number: Number {
+                                neg: true,
+                                integer: Some("12"),
+                                decimal: Some("345"),
+                                exponent: Some(Exponent { neg: true, value: "678" })
+                            },
+                            unit: "px"
+                        })
+                    ),
+                    0..=13
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_at_token() {
+        let lexer = Lexer::new("@foo");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "foo",
+                        TokenKind::At
+                    ),
+                    0..=3
+                )
+            ]
+        )
+    }
+
+    #[test]
+    fn test_hash_token() {
+        let lexer = Lexer::new("#foo");
+        let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
+
+        assert_eq!(
+            tokens,
+            vec![
+                Span::new(
+                    Token::new(
+                        "foo",
+                        TokenKind::Hash(true)
+                    ),
+                    0..=3
                 )
             ]
         )
@@ -834,7 +1064,7 @@ mod test {
 
     #[test]
     fn test_string_token() {
-        let lexer = Lexer::new("\"this is a string\"");
+        let lexer = Lexer::new("'this is a string'");
         let tokens = lexer.collect::<LexerResult<Vec<_>>>().unwrap();
 
         assert_eq!(
